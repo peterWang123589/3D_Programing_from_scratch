@@ -1,0 +1,17 @@
+# 忽略编译生成的文件
+*.exe
+*.dll
+*.obj
+*.pch
+*.lib
+# 忽略临时文件
+*.aps
+*.suo
+*.log
+*.bak
+# 忽略生成文件夹
+x64/
+Debug/
+Release/
+# 忽略用户配置文件
+*.vcxproj.user
