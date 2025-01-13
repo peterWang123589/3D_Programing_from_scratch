@@ -7,6 +7,7 @@
 #include "vector.h"
 #include "mesh.h"
 #include "array.h"
+#include "matrix.h"
 
 
 //vec3_t cube_points[N_POINTS];
@@ -14,7 +15,7 @@
 int previous_frame_time = 0;
 
 bool is_running = false;
-float fov_factor = 640;
+
 vec3_t camera_position = {
 	.x = 0,
 	.y = 0,.z = 0
@@ -22,6 +23,8 @@ vec3_t camera_position = {
 //vec3_t cube_rotation = { .x = 0,.y = 0,.z = 0 };
 /*triangle_t triangles_to_render[N_MESH_FACES];*///plane tranigle be projected
 triangle_t* triangles_to_render = NULL;
+mat4_t proj_matrix;
+
 
 void setup(void) {
 
@@ -44,6 +47,15 @@ void setup(void) {
 	//		}
 	//	}
 	//}
+	//initialize the perspective projection matrix
+	float fov = M_PI / 6.0; //60 degrees
+	float aspect = ((float)window_height / (float)window_width);
+	float znear = 0.1;
+	float zfar = 100;
+
+
+	proj_matrix = mat4_make_perspective(fov,aspect,znear,zfar);
+
 	load_cube_mesh_data();
 	//load_obj_file_data("./assets/cube.obj");
 
@@ -79,14 +91,14 @@ void process_input(void) {
 	}
 
 }
-vec2_t project(vec3_t point) {
-	vec2_t projected_point = {
-		.x = (fov_factor * point.x)/point.z,
-		.y = (fov_factor * point.y)/point.z
-	};
-	return projected_point;
-
-}
+//vec2_t project(vec3_t point) {
+//	vec2_t projected_point = {
+//		.x = (fov_factor * point.x)/point.z,
+//		.y = (fov_factor * point.y)/point.z
+//	};
+//	return projected_point;
+//
+//}
 
 void update(void) {
 	//while (!SDL_TICKS_PASSED(SDL_GetTicks(), previous_frame_time + Frame_Target_Time));
@@ -102,9 +114,25 @@ void update(void) {
 	previous_frame_time = SDL_GetTicks();
 	//initialize the array of triangles to render
 	triangles_to_render = NULL;
-	mesh.rotation.y += 0.01;
+	//mesh.rotation.y += 0.01;
 	mesh.rotation.x += 0.01;
-	mesh.rotation.z += 0.01;
+	/*mesh.rotation.z += 0.01;
+	mesh.rotation.y += 0.01;
+
+	mesh.scale.x += 0.002;*/
+	
+	/*mesh.translation.x += 0.01;
+	mesh.translation.y += 0.01;*/
+	mesh.translation.z = 5;
+	//create a scale,rotation and translation matrix that will be used to multiply the mesh vertices
+	mat4_t scale_matrix = mat4_make_scale(mesh.scale.x, mesh.scale.y, mesh.scale.z);
+
+	mat4_t translation_matrix = mat4_make_translation(mesh.translation.x, mesh.translation.y, mesh.translation.z);
+	mat4_t rotation_matrix_x = mat4_make_rotation_x(mesh.rotation.x);
+	mat4_t rotation_matrix_y = mat4_make_rotation_y(mesh.rotation.y);
+	mat4_t rotation_matrix_z = mat4_make_rotation_z(mesh.rotation.z);
+
+
 	int num_faces = array_length(mesh.faces);
 	for (int i = 0; i < num_faces; i++) {
 
@@ -116,27 +144,49 @@ void update(void) {
 
 
 
-		vec3_t transformed_vertices[3];
+		vec4_t transformed_vertices[3];
 		for (int j = 0; j < 3; j++) {
 			//tranform before  project
-			vec3_t transformed_vertice = vec3_rotate_x(face_vertices[j], mesh.rotation.x);
+	/*		vec3_t transformed_vertice = vec3_rotate_x(face_vertices[j], mesh.rotation.x);
 			transformed_vertice = vec3_rotate_y(transformed_vertice,mesh.rotation.y);
-			transformed_vertice = vec3_rotate_z(transformed_vertice, mesh.rotation.z);
+			transformed_vertice = vec3_rotate_z(transformed_vertice, mesh.rotation.z);*/
+			vec4_t transformed_vertice =vec4_from_vec3(face_vertices[j]);
+
+		/*transformed_vertice= mat4_mul_vec4(scale_matrix, transformed_vertice);
+			transformed_vertice = mat4_mul_vec4(rotation_matrix_x, transformed_vertice);
+
+			transformed_vertice = mat4_mul_vec4(rotation_matrix_y, transformed_vertice);
+		
+			transformed_vertice = mat4_mul_vec4(rotation_matrix_z, transformed_vertice);
+			transformed_vertice = mat4_mul_vec4(translation_matrix, transformed_vertice);*/
+			
+			//create a world matrix combining scale,rotation,and translation matrices
+
+			//order matter:First scale,then rotate,then translate. [T]*[R]*[S]*v
+			mat4_t world_matrix = mat4_identity();
+			world_matrix = mat4_mul_mat4(scale_matrix,world_matrix);
+			world_matrix = mat4_mul_mat4(rotation_matrix_x, world_matrix);
+			world_matrix = mat4_mul_mat4(rotation_matrix_y, world_matrix);
+			world_matrix = mat4_mul_mat4(rotation_matrix_z, world_matrix);
+			world_matrix = mat4_mul_mat4(translation_matrix, world_matrix);
+
+			transformed_vertice = mat4_mul_vec4(world_matrix, transformed_vertice);
+
 
 			
 		//move the points away from the camera
 
-		transformed_vertice.z += 5;
-		transformed_vertices[j] = transformed_vertice;
+	
+		transformed_vertices[j] = transformed_vertice; 
 	
 		
 
 		}
 		//check backface culling before project and after transform
 		if (cull_method == CULL_BACKFACE) {
-			vec3_t va = transformed_vertices[0];/*  A   */
-			vec3_t vb = transformed_vertices[1];/* /  \*/
-			vec3_t vc = transformed_vertices[2];/*C---_B*/ //clockwise£¨relative with left hands coordinate£©   
+			vec3_t va = vec3_from_vec4(transformed_vertices[0]);/*  A   */
+			vec3_t vb = vec3_from_vec4(transformed_vertices[1]);/* /  \*/
+			vec3_t vc = vec3_from_vec4(transformed_vertices[2]);/*C---_B*/ //clockwise£¨relative with left hands coordinate£©   
 			vec3_t ab = vec3_sub(vb, va);
 			vec3_t ac = vec3_sub(vc, va);
 			vec3_normalize(&ab);
@@ -152,17 +202,23 @@ void update(void) {
 			if (dot_normal_camera < 0) continue;
 		}
 		
-		vec2_t projected_points[3];
+		vec4_t projected_points[3];
 
 		//loop all three vertices to perform projection
 		for (int j = 0; j < 3; j++) {
 			//project
-			vec3_t transformed_vertice = transformed_vertices[j];
-			vec2_t projected_point = project(transformed_vertice);
+			
+			vec4_t projected_point =mat4_mul_vec4_project(proj_matrix,transformed_vertices[j]);
 			projected_points[j] = projected_point;
-			//scale and translate the projected points to the middle of the screen
-			projected_points[j].x += (window_width / 2);
-			projected_points[j].y += (window_height / 2);
+
+			//Scale into the view
+			projected_points[j].x *= (window_width / 2.0);
+			projected_points[j].y *= (window_height / 2.0);
+
+			// translate the projected points to the middle of the screen
+			projected_points[j].x += (window_width / 2.0);
+			projected_points[j].y += (window_height / 2.0);
+		
 		
 		
 		}
