@@ -1,4 +1,4 @@
-
+#define _CRT_SECURE_NO_WARNINGS 1
 #include <stdio.h>
 #include <stdint.h>
 #include <stdbool.h>
@@ -8,6 +8,10 @@
 #include "mesh.h"
 #include "array.h"
 #include "matrix.h"
+#include "light.h"
+#include "texture.h"
+#include "triangle.h"
+#include "upng.h"
 
 
 //vec3_t cube_points[N_POINTS];
@@ -24,7 +28,7 @@ vec3_t camera_position = {
 /*triangle_t triangles_to_render[N_MESH_FACES];*///plane tranigle be projected
 triangle_t* triangles_to_render = NULL;
 mat4_t proj_matrix;
-
+light light_ray = { .direction = {.x = 3,.y = 2,.z = 3} };
 
 void setup(void) {
 
@@ -36,7 +40,7 @@ void setup(void) {
 	color_buffer = (uint32_t*)malloc(sizeof(uint32_t) *window_width * window_height);
 
 	//creating a sdl texture that is used to display the color buffer
-	color_buffer_texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, window_width, window_height);
+	color_buffer_texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_STREAMING, window_width, window_height);
 
 	//int point_count = 0;
 	//for (float x = -1; x <= 1; x += 0.25) {
@@ -48,7 +52,7 @@ void setup(void) {
 	//	}
 	//}
 	//initialize the perspective projection matrix
-	float fov = M_PI / 6.0; //60 degrees
+	float fov = M_PI / 3.0; //60 degrees
 	float aspect = ((float)window_height / (float)window_width);
 	float znear = 0.1;
 	float zfar = 100;
@@ -56,8 +60,14 @@ void setup(void) {
 
 	proj_matrix = mat4_make_perspective(fov,aspect,znear,zfar);
 
+	//Manually load the hardcoded texture data from the static array
+	//mesh_texture = (uint32_t*)REDBRICK_TEXTURE;
+
+
 	load_cube_mesh_data();
-	//load_obj_file_data("./assets/cube.obj");
+	//load_obj_file_data("./assets/f22.obj");
+	//load the texture information from an external PNG file
+	load_png_texture_data("./assets/cube.png");
 
 
 }
@@ -80,6 +90,10 @@ void process_input(void) {
 				render_method = RENDER_FILL_TRIANGLE;
 			if (event.key.keysym.sym == SDLK_4)
 				render_method = RENDER_FILL_TRIANGLE_WIRE;
+			if (event.key.keysym.sym == SDLK_5)
+				render_method = RENDER_TEXTURED;
+			if (event.key.keysym.sym == SDLK_6)
+				render_method = RENDER_TEXTURED_WIRE;
 			if (event.key.keysym.sym == SDLK_c)
 				cull_method = CULL_BACKFACE;
 			if (event.key.keysym.sym == SDLK_d)
@@ -116,10 +130,10 @@ void update(void) {
 	triangles_to_render = NULL;
 	//mesh.rotation.y += 0.01;
 	mesh.rotation.x += 0.01;
-	/*mesh.rotation.z += 0.01;
-	mesh.rotation.y += 0.01;
+	//mesh.rotation.z += 0.01;
+	//mesh.rotation.y += 0.01;
 
-	mesh.scale.x += 0.002;*/
+	
 	
 	/*mesh.translation.x += 0.01;
 	mesh.translation.y += 0.01;*/
@@ -182,21 +196,23 @@ void update(void) {
 		
 
 		}
+		vec3_t va = vec3_from_vec4(transformed_vertices[0]);/*  A   */
+		vec3_t vb = vec3_from_vec4(transformed_vertices[1]);/* /  \*/
+		vec3_t vc = vec3_from_vec4(transformed_vertices[2]);/*C---_B*/ //clockwise£¨relative with left hands coordinate£©   
+		vec3_t ab = vec3_sub(vb, va);
+		vec3_t ac = vec3_sub(vc, va);
+		vec3_normalize(&ab);
+		vec3_normalize(&ac);
+		//compute the face normal (using cross product to find )
+		vec3_t normal_vector = vec3_cross(ab, ac);
+		//normalize the face normal vector
+		vec3_normalize(&normal_vector);
+		vec3_t camera_ray = vec3_sub(camera_position, va);
+		float dot_normal_camera = vec3_dot(normal_vector, camera_ray);
+
 		//check backface culling before project and after transform
 		if (cull_method == CULL_BACKFACE) {
-			vec3_t va = vec3_from_vec4(transformed_vertices[0]);/*  A   */
-			vec3_t vb = vec3_from_vec4(transformed_vertices[1]);/* /  \*/
-			vec3_t vc = vec3_from_vec4(transformed_vertices[2]);/*C---_B*/ //clockwise£¨relative with left hands coordinate£©   
-			vec3_t ab = vec3_sub(vb, va);
-			vec3_t ac = vec3_sub(vc, va);
-			vec3_normalize(&ab);
-			vec3_normalize(&ac);
-			//compute the face normal (using cross product to find )
-			vec3_t normal_vector = vec3_cross(ab, ac);
-			//normalize the face normal vector
-			vec3_normalize(&normal_vector);
-			vec3_t camera_ray = vec3_sub(camera_position, va);
-			float dot_normal_camera = vec3_dot(normal_vector, camera_ray);
+		
 
 			//Bypass tge triangles that are looking away from camera
 			if (dot_normal_camera < 0) continue;
@@ -215,6 +231,9 @@ void update(void) {
 			projected_points[j].x *= (window_width / 2.0);
 			projected_points[j].y *= (window_height / 2.0);
 
+			//Invert the y values to account for flipped screen y coordinate
+			projected_points[j].y *= -1;
+
 			// translate the projected points to the middle of the screen
 			projected_points[j].x += (window_width / 2.0);
 			projected_points[j].y += (window_height / 2.0);
@@ -224,13 +243,35 @@ void update(void) {
 		}
 		//calculate the average depth for each face based on the vertices after transform
 		float avg_depth = (transformed_vertices[0].z + transformed_vertices[1].z + transformed_vertices[2].z) / 3.0;
+
+		//calculate color base light intensity
+	
+		vec3_t zero_vector = { 0 };
+		vec3_t reverse_light_ray = vec3_sub(zero_vector, light_ray.direction);
+		vec3_normalize(&reverse_light_ray);
+		float percent = vec3_dot(normal_vector, reverse_light_ray);
+		
+		uint32_t color = light_apply_intensity(mesh_face.color, percent);
+		
+	
+
 		triangle_t plane_triangle = {
 		.points = {
-			{projected_points[0].x,projected_points[0].y},
-			{projected_points[1].x,projected_points[1].y},
-			{projected_points[2].x,projected_points[2].y}
+			{projected_points[0].x,projected_points[0].y,projected_points[0].z,projected_points[0].w},
+			{projected_points[1].x,projected_points[1].y,projected_points[1].z,projected_points[1].w},
+			{projected_points[2].x,projected_points[2].y,projected_points[2].z,projected_points[2].w}
 		},
-			.color = mesh_face.color,
+			.texcoords = {
+				{
+				mesh_face.a_uv.u,mesh_face.a_uv.v,
+			
+				},
+			{mesh_face.b_uv.u,mesh_face.b_uv.v},
+			{mesh_face.c_uv.u,mesh_face.c_uv.v}
+		
+		
+		},
+			.color = color,
 			.avg_depth=avg_depth
 
 		};
@@ -285,7 +326,31 @@ void render(void) {
 			);
 		
 		}
-		if (render_method==RENDER_WIRE || render_method == RENDER_WIRE_VERTEX || render_method == RENDER_FILL_TRIANGLE_WIRE) {
+		if (render_method == RENDER_TEXTURED|| render_method==  RENDER_TEXTURED_WIRE) {
+			draw_textured_triangle(
+				plane_triangle.points[0].x,
+				plane_triangle.points[0].y,
+				plane_triangle.points[0].z,
+				plane_triangle.points[0].w,
+				plane_triangle.texcoords[0].u,
+				plane_triangle.texcoords[0].v,
+				plane_triangle.points[1].x,
+				plane_triangle.points[1].y,
+				plane_triangle.points[1].z,
+				plane_triangle.points[1].w,
+				plane_triangle.texcoords[1].u,
+				plane_triangle.texcoords[1].v,
+				plane_triangle.points[2].x,
+				plane_triangle.points[2].y,
+				plane_triangle.points[2].z,
+				plane_triangle.points[2].w,
+				plane_triangle.texcoords[2].u,
+				plane_triangle.texcoords[2].v,
+				mesh_texture
+
+			);
+		}
+		if (render_method==RENDER_WIRE || render_method == RENDER_WIRE_VERTEX || render_method == RENDER_FILL_TRIANGLE_WIRE||render_method==RENDER_TEXTURED_WIRE) {
 			//draw unfilled triangle(wireframe)
 			draw_triangle(
 
@@ -320,6 +385,7 @@ void render(void) {
 //free memory that was dynamically allocated by the program
 void free_resources(void) {
 	free(color_buffer);
+	upng_free(png_texture);
 	array_free(mesh.faces);
 	array_free(mesh.vertices);
 }
