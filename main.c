@@ -12,7 +12,10 @@
 #include "texture.h"
 #include "triangle.h"
 #include "upng.h"
+#define MAX_TRIANGLES_PER_MESH 10000
 
+triangle_t triangles_to_render[MAX_TRIANGLES_PER_MESH];
+int num_triangles_to_render = 0;
 
 //vec3_t cube_points[N_POINTS];
 //vec2_t projected_points[N_POINTS];
@@ -26,7 +29,7 @@ vec3_t camera_position = {
 };
 //vec3_t cube_rotation = { .x = 0,.y = 0,.z = 0 };
 /*triangle_t triangles_to_render[N_MESH_FACES];*///plane tranigle be projected
-triangle_t* triangles_to_render = NULL;
+//triangle_t* triangles_to_render = NULL;
 mat4_t proj_matrix;
 light light_ray = { .direction = {.x = 3,.y = 2,.z = 3} };
 
@@ -38,6 +41,7 @@ void setup(void) {
 	cull_method = CULL_BACKFACE;
 
 	color_buffer = (uint32_t*)malloc(sizeof(uint32_t) *window_width * window_height);
+	z_buffer = (float*)malloc(sizeof(float) * window_width * window_height);
 
 	//creating a sdl texture that is used to display the color buffer
 	color_buffer_texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_STREAMING, window_width, window_height);
@@ -64,10 +68,10 @@ void setup(void) {
 	//mesh_texture = (uint32_t*)REDBRICK_TEXTURE;
 
 
-	load_cube_mesh_data();
-	//load_obj_file_data("./assets/f22.obj");
+	//load_cube_mesh_data();
+	load_obj_file_data("./assets/drone.obj");
 	//load the texture information from an external PNG file
-	load_png_texture_data("./assets/cube.png");
+	load_png_texture_data("./assets/drone.png");
 
 
 }
@@ -126,10 +130,10 @@ void update(void) {
 	if(time_to_wait)
 
 	previous_frame_time = SDL_GetTicks();
-	//initialize the array of triangles to render
-	triangles_to_render = NULL;
+	//INitialize the counter of triangles to render for the current frame
+	num_triangles_to_render = 0;
 	//mesh.rotation.y += 0.01;
-	mesh.rotation.x += 0.01;
+	mesh.rotation.y += 0.01;
 	//mesh.rotation.z += 0.01;
 	//mesh.rotation.y += 0.01;
 
@@ -275,21 +279,25 @@ void update(void) {
 			.avg_depth=avg_depth
 
 		};
-		array_push(triangles_to_render,plane_triangle);
+		/*array_push(triangles_to_render,plane_triangle);*/
+		if (num_triangles_to_render < MAX_TRIANGLES_PER_MESH) {
+			triangles_to_render[num_triangles_to_render++] = plane_triangle;
+		}
+		
 
 	}
 	//sort the triangles to render by theur avf_depth
 
-	int num_triangles = array_length(triangles_to_render);
-	for (int i = 0; i < num_triangles; i++) {
-		for (int j = i; j < num_triangles; j++) {
-			if (triangles_to_render[i].avg_depth < triangles_to_render[j].avg_depth) {
-				triangle_t temp = triangles_to_render[i];
-				triangles_to_render[i] = triangles_to_render[j];
-				triangles_to_render[j] = temp;
-			}
-		}
-	}
+	//int num_triangles = array_length(triangles_to_render);
+	//for (int i = 0; i < num_triangles; i++) {
+	//	for (int j = i; j < num_triangles; j++) {
+	//		if (triangles_to_render[i].avg_depth < triangles_to_render[j].avg_depth) {
+	//			triangle_t temp = triangles_to_render[i];
+	//			triangles_to_render[i] = triangles_to_render[j];
+	//			triangles_to_render[j] = temp;
+	//		}
+	//	}
+	//}
 
 }
 
@@ -306,8 +314,8 @@ void render(void) {
 
 	//	draw_rect((int)(projected_point.x)+(window_width/2), (int)(projected_point.y)+(window_height/2), 4, 4, 0xffffff00);
 	//}
-	int num_triangles = array_length(triangles_to_render);
-	for (int i = 0; i < num_triangles; i++) {
+	
+	for (int i = 0; i < num_triangles_to_render; i++) {
 		triangle_t plane_triangle = triangles_to_render[i];
 	
 
@@ -318,10 +326,16 @@ void render(void) {
 
 				plane_triangle.points[0].x,
 				plane_triangle.points[0].y,
+				plane_triangle.points[0].z,
+				plane_triangle.points[0].w,
 				plane_triangle.points[1].x,
 				plane_triangle.points[1].y,
+				plane_triangle.points[1].z,
+				plane_triangle.points[1].w,
 				plane_triangle.points[2].x,
 				plane_triangle.points[2].y,
+				plane_triangle.points[2].z,
+				plane_triangle.points[2].w,
 				plane_triangle.color
 			);
 		
@@ -376,15 +390,17 @@ void render(void) {
 
 	}
 	//draw_filled_triangle(300,100,50,400,500,700,0xffffff00);
-	array_free(triangles_to_render);
+	
 	render_color_buffer();
 	clear_color_buffer(0xFF000000);
+	clear_z_buffer();
 	SDL_RenderPresent(renderer);
 }
 
 //free memory that was dynamically allocated by the program
 void free_resources(void) {
 	free(color_buffer);
+	free(z_buffer);
 	upng_free(png_texture);
 	array_free(mesh.faces);
 	array_free(mesh.vertices);
