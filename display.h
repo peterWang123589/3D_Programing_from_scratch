@@ -5,7 +5,7 @@
 #include <stdint.h>
 #include <SDL.h>
 #include <stdbool.h>
-#define FPS 30
+#define FPS 60
 #define Frame_Target_Time (1000 / FPS)
 
 enum cull_method {

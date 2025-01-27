@@ -48,6 +48,9 @@
     <ClCompile Include="upng.c">
       <Filter>资源文件</Filter>
     </ClCompile>
+    <ClCompile Include="camera.c">
+      <Filter>资源文件</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="display.h">
@@ -81,6 +84,9 @@
       <Filter>资源文件</Filter>
     </ClInclude>
     <ClInclude Include="upng.h">
+      <Filter>资源文件</Filter>
+    </ClInclude>
+    <ClInclude Include="camera.h">
       <Filter>资源文件</Filter>
     </ClInclude>
   </ItemGroup>

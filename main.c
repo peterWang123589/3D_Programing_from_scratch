@@ -12,6 +12,7 @@
 #include "texture.h"
 #include "triangle.h"
 #include "upng.h"
+#include "camera.h"
 #define MAX_TRIANGLES_PER_MESH 10000
 
 triangle_t triangles_to_render[MAX_TRIANGLES_PER_MESH];
@@ -22,14 +23,14 @@ int num_triangles_to_render = 0;
 int previous_frame_time = 0;
 
 bool is_running = false;
+float delta_time = 0;
 
-vec3_t camera_position = {
-	.x = 0,
-	.y = 0,.z = 0
-};
+
 //vec3_t cube_rotation = { .x = 0,.y = 0,.z = 0 };
 /*triangle_t triangles_to_render[N_MESH_FACES];*///plane tranigle be projected
 //triangle_t* triangles_to_render = NULL;
+mat4_t world_matrix;
+mat4_t view_matrix;
 mat4_t proj_matrix;
 light light_ray = { .direction = {.x = 3,.y = 2,.z = 3} };
 
@@ -69,9 +70,9 @@ void setup(void) {
 
 
 	//load_cube_mesh_data();
-	load_obj_file_data("./assets/drone.obj");
+	load_obj_file_data("./assets/f22.obj");
 	//load the texture information from an external PNG file
-	load_png_texture_data("./assets/drone.png");
+	load_png_texture_data("./assets/f22.png");
 
 
 }
@@ -100,8 +101,27 @@ void process_input(void) {
 				render_method = RENDER_TEXTURED_WIRE;
 			if (event.key.keysym.sym == SDLK_c)
 				cull_method = CULL_BACKFACE;
-			if (event.key.keysym.sym == SDLK_d)
+			if (event.key.keysym.sym == SDLK_x)
 				cull_method = CULL_NONE;
+			if (event.key.keysym.sym == SDLK_j)
+				camera.position.y +=3.0* delta_time;
+			if (event.key.keysym.sym == SDLK_k)
+				camera.position.y -= 3.0*delta_time;
+			if (event.key.keysym.sym == SDLK_a || event.key.keysym.sym == SDLK_LEFT)
+				camera.yaw += 1.0 * delta_time;
+			if (event.key.keysym.sym == SDLK_d || event.key.keysym.sym == SDLK_RIGHT)
+				camera.yaw -= 1.0 * delta_time;
+			if (event.key.keysym.sym == SDLK_w || event.key.keysym.sym == SDLK_UP)
+			{
+				camera.forward_velocity = vec3_mul(camera.direction, 5.0 * delta_time);
+				camera.position = vec3_add(camera.position, camera.forward_velocity);
+			}
+			if (event.key.keysym.sym == SDLK_s || event.key.keysym.sym == SDLK_DOWN)
+			{
+				camera.forward_velocity = vec3_mul(camera.direction, 5.0 * delta_time);
+				camera.position = vec3_sub(camera.position, camera.forward_velocity);
+			}
+			   
 			break;
 
 
@@ -127,13 +147,13 @@ void update(void) {
 	if (time_to_wait > 0 && time_to_wait <= Frame_Target_Time) {
 		SDL_Delay(time_to_wait);
 	}
-	if(time_to_wait)
-
+	//get a delta time factor converted  to seconds to be used to update our game  objects
+  delta_time = (SDL_GetTicks() - previous_frame_time)/1000.0;
 	previous_frame_time = SDL_GetTicks();
 	//INitialize the counter of triangles to render for the current frame
 	num_triangles_to_render = 0;
 	//mesh.rotation.y += 0.01;
-	mesh.rotation.y += 0.01;
+	/*mesh.rotation.y += 0.01;*/
 	//mesh.rotation.z += 0.01;
 	//mesh.rotation.y += 0.01;
 
@@ -141,14 +161,30 @@ void update(void) {
 	
 	/*mesh.translation.x += 0.01;
 	mesh.translation.y += 0.01;*/
-	mesh.translation.z = 5;
+	mesh.translation.z = 4;
 	//create a scale,rotation and translation matrix that will be used to multiply the mesh vertices
+
+	//change  the camera position per animation per animation frame
+	/*camera.position.x += 0.8 * delta_time;
+	camera.position.y += 0.8 * delta_time;*/
 	mat4_t scale_matrix = mat4_make_scale(mesh.scale.x, mesh.scale.y, mesh.scale.z);
 
 	mat4_t translation_matrix = mat4_make_translation(mesh.translation.x, mesh.translation.y, mesh.translation.z);
 	mat4_t rotation_matrix_x = mat4_make_rotation_x(mesh.rotation.x);
 	mat4_t rotation_matrix_y = mat4_make_rotation_y(mesh.rotation.y);
 	mat4_t rotation_matrix_z = mat4_make_rotation_z(mesh.rotation.z);
+
+	//create the view matrix 
+
+	vec3_t up_direction = { 0,1,0 };
+	//compute the camera target looking at the positive z-axis
+	vec3_t target = { 0,0,1 };
+	mat4_t camera_yaw_rotation = mat4_make_rotation_y(camera.yaw);
+	 camera.direction=  vec3_from_vec4(mat4_mul_vec4(camera_yaw_rotation, vec4_from_vec3( target)));
+	 target = vec3_add(camera.position, camera.direction);
+
+
+	 view_matrix = mat4_look_at(camera.position,target,up_direction);
 
 
 	int num_faces = array_length(mesh.faces);
@@ -181,7 +217,7 @@ void update(void) {
 			//create a world matrix combining scale,rotation,and translation matrices
 
 			//order matter:First scale,then rotate,then translate. [T]*[R]*[S]*v
-			mat4_t world_matrix = mat4_identity();
+	        world_matrix = mat4_identity();
 			world_matrix = mat4_mul_mat4(scale_matrix,world_matrix);
 			world_matrix = mat4_mul_mat4(rotation_matrix_x, world_matrix);
 			world_matrix = mat4_mul_mat4(rotation_matrix_y, world_matrix);
@@ -189,7 +225,9 @@ void update(void) {
 			world_matrix = mat4_mul_mat4(translation_matrix, world_matrix);
 
 			transformed_vertice = mat4_mul_vec4(world_matrix, transformed_vertice);
-
+										
+			//multiply the view matrix by the vector to transform the scene to the camera space
+			transformed_vertice = mat4_mul_vec4(view_matrix, transformed_vertice);
 
 			
 		//move the points away from the camera
@@ -211,7 +249,8 @@ void update(void) {
 		vec3_t normal_vector = vec3_cross(ab, ac);
 		//normalize the face normal vector
 		vec3_normalize(&normal_vector);
-		vec3_t camera_ray = vec3_sub(camera_position, va);
+		vec3_t origin = { 0,0,0 };
+		vec3_t camera_ray = vec3_sub(origin, va);
 		float dot_normal_camera = vec3_dot(normal_vector, camera_ray);
 
 		//check backface culling before project and after transform
